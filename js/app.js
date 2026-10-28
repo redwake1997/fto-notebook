@@ -140,7 +140,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) flush
 
 function newShift() {
   return {
-    v: 1, startedAt: Date.now(), calls: ['general'], activeCall: 'general', notes: [],
+    v: 1, startedAt: Date.now(), calls: ['general'], activeCall: 'general', notes: [], drafts: {},
     overrides: {}, narrOn: {}, narr: {}, confirmedNO: {}, training: null, view: 'notes',
   };
 }
@@ -182,7 +182,7 @@ function route() {
   const which = !guide ? 'guide' : !shift ? 'start' : 'shift';
   for (const [k, node] of Object.entries(screens)) node.hidden = k !== which;
   applyTheme();
-  if (which === 'shift') setView(shift.view || 'notes');
+  if (which === 'shift') { loadDraft(); setView(shift.view || 'notes'); }
 }
 
 for (const t of $$('.tab')) t.addEventListener('click', () => setView(t.dataset.view));
@@ -223,7 +223,7 @@ function renderCalls() {
       class: 'chip' + (id === shift.activeCall ? ' active' : ''),
       'aria-pressed': String(id === shift.activeCall),
       title: id === 'general' ? 'Notes not tied to a call: arrival, uniform, truck check, station, debrief' : null,
-      onclick: () => { shift.activeCall = id; save(); renderNotes(); },
+      onclick: () => switchCall(id),
     }, callTitle(id))),
     el('button', { class: 'chip add', onclick: newCall }, '+ New call'),
   );
@@ -233,10 +233,31 @@ function newCall() {
   const nums = shift.calls.filter(c => c !== 'general').map(Number);
   const next = String((nums.length ? Math.max(...nums) : 0) + 1);
   shift.calls.push(next);
-  shift.activeCall = next;
+  switchCall(next);
+  $('#note-text').focus();
+}
+
+// Each call keeps its own unsaved draft, so typed text never jumps to another call.
+function stashDraft() {
+  shift.drafts = shift.drafts || {};
+  const text = $('#note-text').value;
+  const teaching = $('#note-teaching').checked;
+  if (text.trim() || teaching) shift.drafts[shift.activeCall] = { text, teaching };
+  else delete shift.drafts[shift.activeCall];
+}
+function loadDraft() {
+  const d = (shift.drafts || {})[shift.activeCall] || {};
+  $('#note-text').value = d.text || '';
+  $('#note-teaching').checked = !!d.teaching;
+  renderFlagList($('#note-flags'), T.findFlags($('#note-text').value));
+}
+function switchCall(id) {
+  if (id === shift.activeCall) return;
+  stashDraft();
+  shift.activeCall = id;
+  loadDraft();
   save();
   renderNotes();
-  $('#note-text').focus();
 }
 
 function updateComposer() {
@@ -253,10 +274,12 @@ function updateComposer() {
 let flagTimer = null;
 $('#note-text').addEventListener('input', () => {
   updateComposer();
+  stashDraft();
+  save();
   clearTimeout(flagTimer);
   flagTimer = setTimeout(() => renderFlagList($('#note-flags'), T.findFlags($('#note-text').value)), 350);
 });
-$('#note-teaching').addEventListener('change', updateComposer);
+$('#note-teaching').addEventListener('change', () => { updateComposer(); stashDraft(); save(); });
 $('#note-text').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !$('#btn-note').disabled) $('#btn-note').click();
 });
@@ -280,13 +303,14 @@ $('#btn-note').addEventListener('click', () => {
   $('#note-text').value = '';
   $('#note-teaching').checked = false;
   $('#note-flags').replaceChildren();
+  if (shift.drafts) delete shift.drafts[n.callId];
   updateComposer();
   if (taught) { renderNotes(); toast('Training note saved'); }
   else openPicker(n.id);
 });
 
-function makeNote(text, teaching) {
-  const n = { id: uid(), callId: shift.activeCall, text, teaching, objectiveIds: [], observedCategories: [], dismissedFlags: [], at: Date.now() };
+function makeNote(text, teaching, callId = shift.activeCall) {
+  const n = { id: uid(), callId, text, teaching, objectiveIds: [], observedCategories: [], dismissedFlags: [], at: Date.now() };
   shift.notes.push(n);
   save();
   renderNotes();
@@ -369,14 +393,22 @@ function editNote(card, n) {
 
 // ---------- objectives picker ----------
 let pickingId = null;
+let pickerCategory = null; // set when opened from Review's Guide button: one category, choose the call
 const picker = $('#picker');
 
-function openPicker(noteId) {
+function openPicker(noteId, opts = {}) {
   pickingId = noteId;
+  pickerCategory = opts.categoryId || null;
   const n = shift.notes.find(x => x.id === noteId);
-  $('#picker-title').textContent = `Select Objectives · ${callTitle(n.callId)}`;
-  $('#picker-note').textContent = (n.text || '').trim() || 'Objectives only, no note';
+  if (pickerCategory) {
+    $('#picker-title').textContent = `Guide · ${S.category(pickerCategory).label || S.category(pickerCategory).name}`;
+    $('#picker-note').textContent = 'Check what you observed, then choose the call.';
+  } else {
+    $('#picker-title').textContent = `Select Objectives · ${callTitle(n.callId)}`;
+    $('#picker-note').textContent = (n.text || '').trim() || 'Objectives only, no note';
+  }
   $('#picker-search').value = '';
+  $('#picker-search').hidden = !!pickerCategory;
   renderPicker();
   picker.showModal();
   $('#picker-list').scrollTop = 0;
@@ -390,6 +422,7 @@ function finishPicking() {
     shift.notes = shift.notes.filter(x => x.id !== n.id);
   }
   pickingId = null;
+  pickerCategory = null;
   save();
   if (shift && !$('#view-notes').hidden) renderNotes();
   if (shift && !$('#view-review').hidden) renderReview();
@@ -439,9 +472,18 @@ function renderPicker() {
   const searching = q.length > 0;
   const match = s => q.every(w => s.toLowerCase().includes(w));
 
+  if (pickerCategory) {
+    $('#picker-recent').replaceChildren(
+      el('span', { class: 'label' }, 'Which call was this on?'),
+      el('div', { class: 'recent-row' }, shift.calls.map(id => el('button', {
+        class: 'chip' + (n.callId === id ? ' active' : ''), 'aria-pressed': String(n.callId === id),
+        onclick: () => { n.callId = id; save(); renderPicker(); },
+      }, callTitle(id)))),
+    );
+  }
   // Recently used
   const recent = (store.get(KEYS.recent) || []).map(id => S.getObjective(id)).filter(Boolean);
-  $('#picker-recent').replaceChildren(...(recent.length && !searching ? [
+  if (!pickerCategory) $('#picker-recent').replaceChildren(...(recent.length && !searching ? [
     el('span', { class: 'label' }, 'Recently used'),
     el('div', { class: 'recent-row' }, recent.map(o => {
       const on = n.objectiveIds.includes(o.id);
@@ -452,7 +494,7 @@ function renderPicker() {
     })),
   ] : []));
 
-  const cats = guide.categories.map(cat => {
+  const cats = guide.categories.filter(cat => !pickerCategory || cat.id === pickerCategory).map(cat => {
     const hits = cat.objectives.filter(o => !searching || match(o.text) || match(cat.name));
     if (searching && !hits.length) return null;
     const picked = cat.objectives.filter(o => n.objectiveIds.includes(o.id)).length + (n.observedCategories.includes(cat.id) ? 1 : 0);
@@ -474,7 +516,7 @@ function renderPicker() {
           }));
       }),
     );
-    return el('details', { class: 'cat', open: searching || picked > 0 },
+    return el('details', { class: 'cat', open: searching || picked > 0 || !!pickerCategory },
       el('summary', {}, el('span', {}, `${cat.id}) ${cat.name}`), picked ? el('span', { class: 'count' }, `${picked} selected`) : null),
       body);
   }).filter(Boolean);
@@ -584,7 +626,9 @@ function reviewCard(r) {
     else shift.overrides[r.categoryId] = v;
     save(); renderReview();
   });
-  card.append(el('label', { class: 'score-row' }, 'Change score', sel));
+  card.append(el('div', { class: 'score-row' },
+    el('label', { class: 'score-label' }, 'Change score', sel),
+    el('button', { class: 'btn small-btn guide-btn', onclick: () => openGuide(r.categoryId) }, 'Guide')));
 
   // What's behind the score
   if (r.callScores.length) {
@@ -659,6 +703,14 @@ function reviewCard(r) {
     el('button', { class: 'btn primary', onclick: () => copyText(ta.value.trim()) }, 'Copy'),
   ));
   return card;
+}
+
+// Review → Guide: see this category's objectives and record what you observed on a call.
+function openGuide(categoryId) {
+  const calls = shift.calls.filter(c => c !== 'general');
+  const callId = shift.activeCall || calls[calls.length - 1] || 'general';
+  const n = makeNote('', false, callId);
+  openPicker(n.id, { categoryId });
 }
 
 function redraft(r) {

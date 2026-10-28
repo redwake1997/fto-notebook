@@ -1,7 +1,7 @@
 // FTO Notebook service worker: keeps the app itself available offline.
 // It caches only the app's own files. It never sees or stores notes or the guide,
 // which live in the browser's local storage on this device.
-const VERSION = 'fto-notebook-v1.0.0';
+const VERSION = 'fto-notebook-v1.1.0';
 const FILES = [
   './',
   'index.html',
