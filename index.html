@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#1F3A5F" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15181D" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="FTO Notebook">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>FTO Notebook</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="storage-warning" class="banner warn" hidden>This browser isn't saving data, so notes will be lost if you close it. Private browsing can cause this.</div>
+
+  <!-- 1. No guide loaded on this device yet -->
+  <section id="screen-guide" class="screen narrow" hidden>
+    <h1 class="app-title">FTO Notebook</h1>
+    <p>To get started, load your evaluation guide file on this device. You only need to do this once per device.</p>
+    <p class="muted small">The guide stays in this browser only. It is never uploaded anywhere.</p>
+    <label class="btn primary block file-btn">
+      Load guide file
+      <input type="file" id="guide-file" accept=".json,application/json" hidden>
+    </label>
+    <p id="guide-error" class="error" hidden></p>
+  </section>
+
+  <!-- 2. Guide loaded, no shift running -->
+  <section id="screen-start" class="screen narrow" hidden>
+    <h1 class="app-title">FTO Notebook</h1>
+    <div id="wiped-banner" class="banner warn" hidden>Your last shift was cleared automatically after 24 hours.</div>
+    <div id="ended-banner" class="banner ok" hidden>Shift ended. All notes were deleted from this device.</div>
+    <p class="muted">Notes stay on this device only, and are deleted when you end the shift or 24 hours after it starts.</p>
+    <button id="start-btn" class="btn primary block big">Start shift</button>
+    <button id="start-receive" class="btn block">Receive shift from phone</button>
+    <div class="card settings">
+      <div class="row-between">
+        <div>
+          <strong>Guide loaded</strong>
+          <div class="muted small" id="start-guide-info"></div>
+        </div>
+        <label class="btn small-btn file-btn">Replace<input type="file" class="guide-replace" accept=".json,application/json" hidden></label>
+      </div>
+      <div class="theme-control"></div>
+    </div>
+  </section>
+
+  <!-- 3. Shift running -->
+  <section id="screen-shift" class="screen" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="app-title-sm">FTO Notebook</span>
+        <span class="muted small" id="shift-sub"></span>
+      </div>
+      <nav class="tabs" id="tabs" aria-label="Sections">
+        <button class="tab" data-view="notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></svg><span>Notes</span></button>
+        <button class="tab" data-view="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><path d="M17 17l2 2 3-4"/></svg><span>Review</span></button>
+        <button class="tab" data-view="shift"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Shift</span></button>
+      </nav>
+    </header>
+
+    <main id="view-notes" class="view">
+      <div class="calls" id="calls"></div>
+      <div class="card composer">
+        <label for="note-text" class="label" id="note-label">Note</label>
+        <textarea id="note-text" rows="3" spellcheck="true" autocapitalize="sentences" autocorrect="on" placeholder="What did you see?"></textarea>
+        <div id="note-flags"></div>
+        <label class="check"><input type="checkbox" id="note-teaching"> Something I taught</label>
+        <div class="btn-row">
+          <button id="btn-objectives" class="btn">Objectives</button>
+          <button id="btn-note" class="btn primary">Note + Objectives</button>
+        </div>
+      </div>
+      <div id="notes"></div>
+    </main>
+
+    <main id="view-review" class="view" hidden>
+      <div class="review-layout">
+        <aside class="review-index card" id="review-index" aria-label="Categories"></aside>
+        <div class="review-main">
+          <div class="summary" id="review-summary"></div>
+          <div id="review"></div>
+          <div class="card" id="training-card">
+            <div class="row-between">
+              <strong>Training Provided</strong>
+              <span class="req">Required</span>
+            </div>
+            <p class="muted small">Drafted from notes marked "Something I taught."</p>
+            <textarea id="training-text" rows="4" spellcheck="true" autocapitalize="sentences"></textarea>
+            <div class="flags-line" id="training-flags"></div>
+            <div class="btn-row end">
+              <button id="training-redraft" class="btn">Re-draft</button>
+              <button id="training-copy" class="btn primary">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <main id="view-shift" class="view narrow" hidden>
+      <div class="card stats">
+        <div><strong id="stat-start"></strong><span class="muted small">Started</span></div>
+        <div><strong id="stat-calls"></strong><span class="muted small" id="stat-notes"></span></div>
+        <div><strong id="stat-left"></strong><span class="muted small">Until auto-clear</span></div>
+      </div>
+      <div class="card">
+        <strong>Move this shift to another device</strong>
+        <p class="muted small">Shows QR codes for your laptop's webcam. Nothing is sent over the internet.</p>
+        <div class="btn-row">
+          <button id="send-btn" class="btn primary">Send to laptop</button>
+          <button id="shift-receive" class="btn">Receive here</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row-between">
+          <div>
+            <strong>Guide loaded</strong>
+            <div class="muted small" id="shift-guide-info"></div>
+          </div>
+          <label class="btn small-btn file-btn">Replace<input type="file" class="guide-replace" accept=".json,application/json" hidden></label>
+        </div>
+      </div>
+      <div class="card">
+        <strong>Appearance</strong>
+        <div class="theme-control"></div>
+      </div>
+      <button id="end-btn" class="btn danger block big">End shift &amp; delete notes</button>
+    </main>
+  </section>
+
+  <!-- Objectives picker -->
+  <dialog id="picker" class="sheet" aria-labelledby="picker-title">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <div class="sheet-title">
+        <strong id="picker-title">Select Objectives</strong>
+        <span class="muted small" id="picker-note"></span>
+      </div>
+      <button id="picker-done" class="btn primary">Done</button>
+    </div>
+    <label for="picker-search" class="sr-only">Search the guide</label>
+    <input id="picker-search" type="search" placeholder="Search, e.g. spotter, PPE, vitals" autocomplete="off">
+    <div id="picker-recent"></div>
+    <div id="picker-list"></div>
+  </dialog>
+
+  <!-- Send by QR -->
+  <dialog id="send" class="modal" aria-labelledby="send-title">
+    <strong id="send-title">Send to laptop</strong>
+    <p class="muted small">On the laptop, open FTO Notebook, choose <em>Receive shift</em>, and hold this screen up to the webcam. The codes repeat until every part is read.</p>
+    <canvas id="send-qr" width="320" height="320" aria-label="QR code"></canvas>
+    <div class="row-between"><span id="send-part" class="small"></span><span class="small">Check code <strong id="send-code"></strong></span></div>
+    <p class="small">When the laptop shows <strong>Received</strong> with the same check code, clear this phone.</p>
+    <div class="btn-row">
+      <button id="send-cancel" class="btn">Cancel</button>
+      <button id="send-done" class="btn danger">Laptop has it, clear phone</button>
+    </div>
+  </dialog>
+
+  <!-- Receive by webcam -->
+  <dialog id="receive" class="modal" aria-labelledby="receive-title">
+    <strong id="receive-title">Receive shift</strong>
+    <p class="muted small" id="receive-help">On the phone, open the Shift tab and tap <em>Send to laptop</em>. Hold the phone's screen up to this camera.</p>
+    <div class="video-box"><video id="receive-video" playsinline muted></video></div>
+    <div class="progress" aria-hidden="true"><div id="receive-bar"></div></div>
+    <p id="receive-status" class="small" role="status"></p>
+    <div class="btn-row">
+      <button id="receive-cancel" class="btn">Cancel</button>
+      <button id="receive-use" class="btn primary" hidden>Use this shift</button>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="lib/qrcode.js"></script>
+  <script src="lib/jsQR.js"></script>
+  <script src="js/textcheck.js"></script>
+  <script src="js/scoring.js"></script>
+  <script src="js/narrative.js"></script>
+  <script src="js/handoff.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
